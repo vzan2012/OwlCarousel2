@@ -30,6 +30,7 @@
 		overflow: hidden;
 		/* fix for flashing background */
 		-webkit-transform: translate3d(0px, 0px, 0px);
+		transform: translate3d(0px, 0px, 0px);
 	}
 
 	.owl-wrapper,
@@ -47,6 +48,7 @@
 		min-height: 1px;
 		float: left;
 		-webkit-backface-visibility: hidden;
+		backface-visibility: hidden;
 		-webkit-tap-highlight-color: transparent;
 		-webkit-touch-callout: none;
 	}
@@ -64,7 +66,6 @@
 	.owl-nav .owl-next,
 	.owl-dot {
 		cursor: pointer;
-		cursor: hand;
 		-webkit-user-select: none;
 		-khtml-user-select: none;
 		-moz-user-select: none;
@@ -100,7 +101,7 @@
 	}
 
 	&.owl-drag .owl-item {
-		touch-action: none;
+		touch-action: pan-y;
 		-webkit-user-select: none;
 		-moz-user-select: none;
 		-ms-user-select: none;

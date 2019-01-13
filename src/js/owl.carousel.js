@@ -1,6 +1,6 @@
 /**
  * Owl carousel
- * @version 2.1.6
+ * @version 2.3.4
  * @author Bartosz Wojciechowski
  * @author David Deutsch
  * @license The MIT License (MIT)
@@ -183,6 +183,7 @@
 		loop: false,
 		center: false,
 		rewind: false,
+		checkVisibility: true,
 
 		mouseDrag: true,
 		touchDrag: true,
@@ -208,6 +209,7 @@
 		responsiveBaseElement: window,
 
 		fallbackEasing: 'swing',
+		slideTransition: '',
 
 		info: false,
 
@@ -333,16 +335,12 @@
 			while (repeat > 0) {
 				// Switch to only using appended clones
 				clones.push(this.normalize(clones.length / 2, true));
-				append = append + items[clones[clones.length - 1]][0].outerHTML;
+				$(items[clones[clones.length - 1]][0]).clone(true).addClass('cloned').appendTo(this.$stage);
 				clones.push(this.normalize(items.length - 1 - (clones.length - 1) / 2, true));
-				prepend = items[clones[clones.length - 1]][0].outerHTML + prepend;
+				$(items[clones[clones.length - 1]][0]).clone(true).addClass('cloned').prependTo(this.$stage);
 				repeat -= 1;
 			}
-
 			this._clones = clones;
-
-			$(append).addClass('cloned').appendTo(this.$stage);
-			$(prepend).addClass('cloned').prependTo(this.$stage);
 		}
 	}, {
 		filter: [ 'width', 'items', 'settings' ],
@@ -439,6 +437,68 @@
 	} ];
 
 	/**
+	 * Create the stage DOM element
+	 */
+	Owl.prototype.initializeStage = function() {
+		this.$stage = this.$element.find('.' + this.settings.stageClass);
+
+		// if the stage is already in the DOM, grab it and skip stage initialization
+		if (this.$stage.length) {
+			return;
+		}
+
+		this.$element.addClass(this.options.loadingClass);
+
+		// create stage
+		this.$stage = $('<' + this.settings.stageElement + '>', {
+			"class": this.settings.stageClass
+		}).wrap( $( '<div/>', {
+			"class": this.settings.stageOuterClass
+		}));
+
+		// append stage
+		this.$element.append(this.$stage.parent());
+	};
+
+	/**
+	 * Create item DOM elements
+	 */
+	Owl.prototype.initializeItems = function() {
+		var $items = this.$element.find('.owl-item');
+
+		// if the items are already in the DOM, grab them and skip item initialization
+		if ($items.length) {
+			this._items = $items.get().map(function(item) {
+				return $(item);
+			});
+
+			this._mergers = this._items.map(function() {
+				return 1;
+			});
+
+			this.refresh();
+
+			return;
+		}
+
+		// append content
+		this.replace(this.$element.children().not(this.$stage.parent()));
+
+		// check visibility
+		if (this.isVisible()) {
+			// update view
+			this.refresh();
+		} else {
+			// invalidate width
+			this.invalidate('width');
+		}
+
+		this.$element
+			.removeClass(this.options.loadingClass)
+			.addClass(this.options.loadedClass);
+	};
+
+	/**
 	 * Initializes the carousel.
 	 * @protected
 	 */
@@ -459,36 +519,25 @@
 			}
 		}
 
-		this.$element.addClass(this.options.loadingClass);
-
-		// create stage
-		this.$stage = $('<' + this.settings.stageElement + ' class="' + this.settings.stageClass + '"/>')
-			.wrap('<div class="' + this.settings.stageOuterClass + '"/>');
-
-		// append stage
-		this.$element.append(this.$stage.parent());
-
-		// append content
-		this.replace(this.$element.children().not(this.$stage.parent()));
-
-		// check visibility
-		if (this.$element.is(':visible')) {
-			// update view
-			this.refresh();
-		} else {
-			// invalidate width
-			this.invalidate('width');
-		}
-
-		this.$element
-			.removeClass(this.options.loadingClass)
-			.addClass(this.options.loadedClass);
+		this.initializeStage();
+		this.initializeItems();
 
 		// register event handlers
 		this.registerEventHandlers();
 
 		this.leave('initializing');
 		this.trigger('initialized');
+	};
+
+	/**
+	 * @returns {Boolean} visibility of $element
+	 *                    if you know the carousel will always be visible you can set `checkVisibility` to `false` to
+	 *                    prevent the expensive browser layout forced reflow the $element.is(':visible') does
+	 */
+	Owl.prototype.isVisible = function() {
+		return this.settings.checkVisibility
+			? this.$element.is(':visible')
+			: true;
 	};
 
 	/**
@@ -606,7 +655,9 @@
 	 * Refreshes the carousel primarily for adaptive purposes.
 	 * @public
 	 */
-	Owl.prototype.refresh = function() {
+	Owl.prototype.refresh = function(resizing) {
+		resizing = resizing || false;
+
 		this.enter('refreshing');
 		this.trigger('refresh');
 
@@ -617,6 +668,10 @@
 		this.$element.addClass(this.options.refreshClass);
 
 		this.update();
+
+		if (!resizing) {
+			this.onResize();
+		}
 
 		this.$element.removeClass(this.options.refreshClass);
 
@@ -638,6 +693,8 @@
 	 * @protected
 	 */
 	Owl.prototype.onResize = function() {
+		var resizing = true;
+
 		if (!this._items.length) {
 			return false;
 		}
@@ -646,7 +703,7 @@
 			return false;
 		}
 
-		if (!this.$element.is(':visible')) {
+		if (!this.isVisible()) {
 			return false;
 		}
 
@@ -659,7 +716,7 @@
 
 		this.invalidate('width');
 
-		this.refresh();
+		this.refresh(resizing);
 
 		this.leave('resizing');
 		this.trigger('resized');
@@ -838,7 +895,9 @@
 	Owl.prototype.closest = function(coordinate, direction) {
 		var position = -1,
 			pull = 30,
-			width = this.width(),
+			width = this.width(), // visible carousel width
+			count = this.settings.items,
+			itemWidth = Math.round(width / count),
 			coordinates = this.coordinates();
 
 		if (!this.settings.freeDrag) {
@@ -849,10 +908,10 @@
 					position = index;
 				// on a right pull, check on previous index
 				// to do so, subtract width from value and set position = index + 1
-				} else if (direction === 'right' && coordinate > value - width - pull && coordinate < value - width + pull) {
+				} else if (direction === 'right' && coordinate > value - itemWidth - pull && coordinate < value - itemWidth + pull) {
 					position = index + 1;
 				} else if (this.op(coordinate, '<', value)
-					&& this.op(coordinate, '>', coordinates[index + 1] || value - width)) {
+					&& this.op(coordinate, '>', coordinates[index + 1] !== undefined ? coordinates[index + 1] : value - width)) {
 					position = direction === 'left' ? index + 1 : index;
 				}
 				return position === -1;
@@ -890,7 +949,9 @@
 		if ($.support.transform3d && $.support.transition) {
 			this.$stage.css({
 				transform: 'translate3d(' + coordinate + 'px,0px,0px)',
-				transition: (this.speed() / 1000) + 's'
+				transition: (this.speed() / 1000) + 's' + (
+					this.settings.slideTransition ? ' ' + this.settings.slideTransition : ''
+				)
 			});
 		} else if (animate) {
 			this.$stage.animate({
@@ -1214,7 +1275,7 @@
 		this.speed(this.duration(current, position, speed));
 		this.current(position);
 
-		if (this.$element.is(':visible')) {
+		if (this.isVisible()) {
 			this.update();
 		}
 	};
@@ -1383,7 +1444,7 @@
 				element.css('opacity', 1);
 				this.leave('pre-loading');
 				!this.is('pre-loading') && !this.is('initializing') && this.refresh();
-			}, this)).attr('src', element.attr('src') || element.attr('data-src') || element.attr('data-src-retina'));
+			}, this)).attr('src', (window.devicePixelRatio > 1) ? element.attr('data-src-retina') : element.attr('data-src') || element.attr('src'));
 		}, this));
 	};
 
